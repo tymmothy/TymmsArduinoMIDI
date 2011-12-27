@@ -1,0 +1,14 @@
+# Keep out OSX junk
+*._*
+
+# misc binary object files & the like
+*.o
+*.a
+*.hex
+*.srec
+*.bin
+*.elf
+*.lst
+*.map
+*.prg
+applet/
