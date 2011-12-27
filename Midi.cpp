@@ -404,7 +404,7 @@ void Midi::sendReset(void)
 
 // Constructor -- set up defaults for variables, get ready for use (but don't
 //  take over serial port yet)
-Midi::Midi(HardwareSerial &serial)
+Midi::Midi(HardwareSerial &serial) : serial_(serial)
 {
     /* Not in proprietary stream */
     recvMode_ = 0;
@@ -423,8 +423,6 @@ Midi::Midi(HardwareSerial &serial)
 
     /* Listening to all channels */
     channelIn_ = 0;
-    
-    serial_ = serial;
 }
 
 
