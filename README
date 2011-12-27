@@ -1,0 +1,317 @@
+BACKGROUND / DESIGN
+
+Working on my NIME (New Instruments in Musical Expression) final, I’ve needed to do some MIDI stuff on Arduino, and ended up forward-porting my old MIDI lib to Arduino. I wanted this version to be easy to quickly put together new instruments & interfaces, and to allow the Arduino to be able to also manage other tasks (assuming time was left over after processing MIDI). I considered a couple of ways for data to flow, and finally decided on the current structure, despite it requiring use of C++ subclassing — which I suspect most Arduino users are not familiar with.
+
+If you’re new to programming or new to object oriented programming, and plan to use the libraries to build a MIDI receiver (that is, the Arduino will be receiving MIDI data from a computer or a MIDI interface), I suggest you just take the “receive” example and tweak it to work for you — if you have difficulties, let me know and I’ll try to help you or update the documentation.
+
+MIDI HARDWARE
+
+Note too that to really do MIDI, you’ll need to hook up some hardware.  There are some great resources on the 'nets for learning how to do this, but it's beyond the scope of this document.  Here are some examples though that may help you get started:
+
+http://itp.nyu.edu/physcomp/Tutorials/MusicalArduino for going out from the Arduino to a PC
+http://www.tigoe.net/pcomp/code/serial-communication/midi for MIDI IN to the Arduino.
+Also look at http://www.arduino.cc/cgi-bin/yabb2/YaBB.pl?num=1187962258/ for other MIDI hardware suggestions (and other code that you may also want to consider).
+
+Note (as mentioned in that last link) that because of how the Arduino bootloader works, you may need to disconnect the MIDI hardware from the Arduino until after it fully comes up, or MIDI data may be read as programming data.
+
+STARTING OUT
+
+There are 3 simple examples in the “examples” directory within this directory that you can refer to; a basic “receive” that turns the LED at D13 on/off when it gets note on/off messages, a simple “send” applet that acts as a 2-note, 2-control knob MIDI interface, and a copy of code I used for a recent performance, controlling pneumatics via MIDI.
+
+LIBRARY REFERENCE
+
+MIDI OUT
+
+First you need to create an instance of the Midi class. Generally this is as simple as:
+
+Midi midi(Serial);
+
+Then you have access to the following:
+
+midi.begin(channel, baud rate) This sets the receive channel and the transmit/receive baud rate and prepares the Midi library for operation. Note that baud rate is optional and will default to 31250, the standard baud rate for MIDI communication. For MIDI OUT, the channel doesn’t matter.
+
+midi.setParam(parameter, value) This allows control of a few parameters in the class. parameter can be one of Midi::PARAM_SEND_FULL_COMMANDS or Midi::PARAM_CHANNEL_IN. PARAM_SEND_FULL_COMMANDS takes in a value of 0 (false) or non-zero (true) to indicate to the class whether it should send full MIDI messages for every MIDI event (MIDI allows for data updates to not include the MIDI command for every data update, though in some cases or with homebrewed MIDI code it may be necessary to send more verbose data). PARAM_CHANNEL_IN allows changing the receive channel after it has been set by midi.begin().
+
+In most cases it shouldn’t be necessary to change these parameters.
+
+midi.getParam(parameter) This allows getting the current setting for the parameter types listed for midi.setParam().
+
+midi.sendNoteOn(channel, note, velocity) This sends a MIDI “NOTE ON” event with the given note and velocity to the given channel. The channel must be from 1 to 16, and note and velocity are both between 0 and 127. Note that a “NOTE ON” event with a velocity of 0 is generally interpreted as a “NOTE OFF”.
+
+midi.sendNoteOff(channel, note, velocity) This sends a MIDI “NOTE OFF” event with the given note and velocity to the given channel. The channel must be from 1 to 16, and note and velocity are both between 0 and 127. Generally “NOTE OFF” messages are sent with a velocity of 0.
+
+midi.sendVelocityChange(channel, note, velocity) Sends a MIDI “VELOCITY CHANGE” message with the given note & velocity to the given channel. Channel must be from 1 to 16, and note and velocity are between 0 and 127.
+
+midi.sendControlChange(channel, controller, value) Send a MIDI “CONTROLLER CHANGE” message with the given controller number and value to the given channel. Channel must be from 1 to 16, and controller and value are both between 0 and 127. This is what is generally used for knobs & sliders on MIDI controllers.
+
+midi.sendProgramChange(channel, program) Send a MIDI “PROGRAM CHANGE” message with given program to given channel. Channel must be from 1 to 16 and program is between 0 and 127.
+
+midi.sendAfterTouch(channel, velocity) Send a MIDI “AFTER TOUCH” message with given velocity to given channel. Channel must be from 1 to 16 and velocity is between 0 and 127.
+
+midi.sendPitchChange(pitch) Send a MIDI “PITCH CHANGE” message. This applies to all channels. Pitch must be between 0 and 8192.
+
+midi.sendSongPosition(position) Send a MIDI “SONG POSITION” message. This applies to all channels. Position must be between 0 and 8192.
+
+midi.sendSongSelect(song) Send a MIDI “SONG SELECT” message. This applies to all channels. Song must be between 0 and 127.
+
+midi.sendTuneRequest() Send a MIDI “TUNE REQUEST” message. This message doesn’t have any parameters and applies to all channels.
+
+midi.sendSync() Send a MIDI “SYNC” message. This message doesn’t have any parameters and applies to all channels.
+
+midi.sendStart() Send a MIDI “START” message. This message doesn’t have any parameters and applies to all channels.
+
+midi.sendContinue() Send a MIDI “CONTINUE” message. This message doesn’t have any parameters and applies to all channels.
+
+midi.sendStop() Send a MIDI “STOP” message. This message doesn’t have any parameters and applies to all channels.
+
+midi.sendActiveSense() Send a MIDI “ACTIVE SENSE” message. This message doesn’t have any parameters and applies to all channels. This message is used by some MIDI gear to detect damaged or accidentally removed cables (so that e.g. during a performance if a cable is pulled out the music will stop instead of getting stuck). With many pieces of hardware, once this message is received, it will expect to keep receiving the message periodically (at least every 300 milliseconds) and will stop producing sound if it doesn’t get the message.
+
+midi.sendReset() Send a MIDI “RESET” message. This message doesn’t have any parameters and applies to all channels.
+
+EXAMPLE CODE FOR A SIMPLE MIDI CONTROLLER
+
+// This sketch is for building a simple MIDI controller with 2 buttons for
+//  sending note values & 2 knobs for control values
+//
+// To get this working, you should have set up the following hardware:
+//  - a switch from Digital Pin 2 to +5v, and a 1 to 10K resistor from
+//      pin 2 to ground
+//  - a switch from Digital Pin 3 to +5v, and a 1 to 10K resistor from
+//      pin 3 to ground
+//  - a potentiometer with one side at +5v, one side at ground, and the
+//      wiper (center pin) connected to Analog Pin 0
+//  - a potentiometer with one side at +5v, one side at ground, and the
+//      wiper (center pin) connected to Analog Pin 1
+//
+
+#include "Midi.h"
+
+// Create an instance of the Midi class.
+//
+// If we were had to receive messages, you'd have to make a subclass of the
+//  Midi class.  See the MidiReceiveExample for an example of how to do that.
+//
+// Sending is a lot easier :)
+Midi midi(Serial);
+
+void setup()
+{
+  // Configure digital pins for input.
+  pinMode(2, INPUT);
+  pinMode(3, INPUT);
+
+  // This causes the midi object to listen to ALL Midi channels.  If a number
+  //  from 1-16 is passed, messages will be filtered so that any messages to
+  //  channels other than the given one will be ignored.
+  midi.begin(0);
+}
+
+int lastDigital2 = LOW;
+int lastDigital3 = LOW;
+
+int lastAnalog0 = 0;
+int lastAnalog1 = 0;
+
+// MIDI channel to send messages to
+int channelOut = 1;
+
+void doControls()
+{
+  int a;
+
+  // Changes on analog lines cause control change events
+  //  to be sent; these are parameters from 0-127
+
+  a = analogRead(0) / 8 ;
+  if (a != lastAnalog0) {
+    midi.sendControlChange(channelOut, 15, a);
+    lastAnalog0 = a;
+  }
+
+  a = analogRead(1) / 8;
+  if (a != lastAnalog1) {
+    midi.sendControlChange(channelOut, 16, a);
+    lastAnalog1 = a;
+  }
+}
+
+void doKeys()
+{
+  int d;
+
+  // Basic code to check pins 2-5; if there's a change on the pin, send
+  //  a NOTE ON or NOTE OFF, depending on whether the button was pressed
+  //  or released, with a different note value for each button.  The velocity
+  //  for all of the NOTE ON messages is the max (127)
+
+  d = digitalRead(2);
+  if (d != lastDigital2) {
+    if (d == HIGH) {
+      midi.sendNoteOn(channelOut, 40, 127);
+    } else {
+      midi.sendNoteOff(channelOut, 40, 0);
+    }
+    lastDigital2 = d;
+  }
+
+  d = digitalRead(3);
+  if (d != lastDigital3) {
+    if (d == HIGH) {
+      midi.sendNoteOn(channelOut, 41, 127);
+    } else {
+      midi.sendNoteOff(channelOut, 41, 0);
+    }
+    lastDigital3 = d;
+  }
+}
+
+void loop()
+{
+  // DON'T need to call midi.poll(), because this sketch doesn't need to
+  //  receive any Midi data.
+  doKeys();
+  doControls();
+}
+
+MIDI IN
+
+For MIDI IN, it is necessary to subclass the Midi class and define handlers for all the MIDI message types you wish to deal with. The upside of this is that for any MIDI message type you don’t want to worry about, you don’t have to do anything. The negative side is that subclassing is a new programming construct for many beginning programmers and might be a little confusing.
+
+Also when receiving MIDI data, you will need to call the poll() function for the Midi subclass every time through loop(), for it to pull data from the serial port and process it.
+
+If a channel other than 0 is given when begin() is called, all incoming MIDI messages for other channels will be ignored.
+
+The following methods can be overridden in a subclass:
+
+void handleNoteOn(unsigned int channel, unsigned int note, unsigned int velocity) is called whenever a MIDI “NOTE ON” message is received; the channel, note and velocity will be filled in from the incoming MIDI message. Please note that if the velocity is 0, MyMidi.handleNoteOff() will be called instead (as many pieces of MIDI equipment send a “NOTE ON” message with velocity of 0 to indicate a NOTE OFF event.
+
+void handleNoteOff(unsigned int channel, unsigned int note, unsigned int velocity) is called whenever a MIDI “NOTE OFF” message is received; the channel, note and velocity will be filled in from the incoming MIDI message.
+
+void handleVelocityChange(unsigned int channel, unsigned int note, unsigned int velocity) is called whenever a MIDI “VELOCITY CHANGE” message is received; the channel, note and velocity will be filled in from the incoming MIDI message.
+
+void handleControlChange(unsigned int channel, unsigned int controller, unsigned int value) is called whenever a MIDI “CONTROL CHANGE” message is received; the channel, controller and value will be filled in from the incoming MIDI message.
+
+void handleProgramChange(unsigned int channel, unsigned int program) is called whenever a MIDI “PROGRAM CHANGE” message is received; the channel and program will be filled in from the incoming MIDI message.
+
+void handleAfterTouch(unsigned int channel, unsigned int velocity) is called whenever a MIDI “AFTER TOUCH” message is received; the channel and velocity will be filled in from the incoming MIDI message.
+
+void handlePitchChange(unsigned int pitch) is called whenever a MIDI “PITCH CHANGE” message is received; the pitch will be filled in from the incoming MIDI message. Note that pitch can range from 0-8192.
+
+void handleSongPosition(unsigned int position) is called whenever a MIDI “SONG POSITION” message is received; the position will be filled in from the incoming MIDI message.
+
+void handleSongSelect(unsigned int song) is called whenever a MIDI “SONG SELECT” message is received; the song will be filled in from the incoming MIDI message.
+
+void handleTuneRequest(void) is called whenever a MIDI “TUNE REQUEST” message is received. There are no parameters to a TUNE REQUEST.
+
+void handleSync(void) is called whenever a MIDI “SYNC” message is received. There are no parameters to a SYNC message.
+
+void handleStart(void) is called whenever a MIDI “START” message is received. There are no parameters to a START message.
+
+void handleContinue(void) is called whenever a MIDI “CONTINUE” message is received. There are no parameters to a CONTINUE message.
+
+void handleStop(void) is called whenever a MIDI “STOP” message is received. There are no parameters to a STOP message.
+
+void handleActiveSense(void) is called whenever a MIDI “ACTIVE SENSE” message is received. There are no parameters to an ACTIVE SENSE message.
+
+void handleReset(void) is called whenever a MIDI “RESET” message is received. There are no parameters to a RESET message.
+
+EXAMPLE CODE FOR A MIDI RECEIVER
+
+// This sketch turns on the LED at D13 when any "NOTE ON" message is received.
+//  It turns the LED off when any "NOTE OFF" message is received.
+//
+// (note that NOTE ON's with velocity = 0 are actually NOTE OFF's, and are
+//  treated as such)
+//
+// It's necessary to subclass Midi in order to handle receiving messages.  If
+//  you're only sending data, see MidiSendExample, which is a bit simpler.
+//
+// If you're both sending AND receiving you'll need to subclass like this,
+//  but only for receive functions.
+//
+
+#include "Midi.h"
+
+// To use the Midi class for receiving Midi messages, you need to subclass it.
+//  If you're a C++ person this makes sense; if not, just follow the example
+//  functions below.
+//
+// Basically, MyMidi here can do anything Midi can do -- it just has the ability
+//  to easily change what the functions do when different message types are received.
+//
+class MyMidi : public Midi {
+  public:
+
+  // Need this to compile; it just hands things off to the Midi class.
+  MyMidi(HardwareSerial &s) : Midi(s) {}
+
+  void handleNoteOn(unsigned int channel, unsigned int note, unsigned int velocity)
+  {
+    digitalWrite(13, HIGH);
+  }
+
+  void handleNoteOff(unsigned int channel, unsigned int note, unsigned int velocity)
+  {
+    digitalWrite(13, LOW);
+  }
+
+  /* You can define any of these functions and they will be called when the
+     matching message type is received.  Otherwise those types of Midi messages
+     are just ignored.
+
+    For C++ folks: these are all declared virtual in the base class
+
+    void handleNoteOff(unsigned int channel, unsigned int note, unsigned int velocity);
+    void handleNoteOn(unsigned int channel, unsigned int note, unsigned int velocity);
+    void handleVelocityChange(unsigned int channel, unsigned int note, unsigned int velocity);
+    void handleControlChange(unsigned int channel, unsigned int controller, unsigned int value);
+    void handleProgramChange(unsigned int channel, unsigned int program);
+    void handleAfterTouch(unsigned int channel, unsigned int velocity);
+    void handlePitchChange(unsigned int pitch);
+    void handleSongPosition(unsigned int position);
+    void handleSongSelect(unsigned int song);
+    void handleTuneRequest(void);
+    void handleSync(void);
+    void handleStart(void);
+    void handleContinue(void);
+    void handleStop(void);
+    void handleActiveSense(void);
+    void handleReset(void);
+*/
+};
+
+// Create an instance of the MyMidi class.
+MyMidi midi(Serial);
+
+void setup()
+{
+  pinMode(13, OUTPUT);
+
+  // This causes the midi object to listen to ALL Midi channels.  If a number
+  //  from 1-16 is passed, messages will be filtered so that any messages to
+  //  channels other than the given one will be ignored.
+  //
+  // Note that you can pass a second parameter as a baud rate, if you're doing
+  //  Midi protocol but using some other communication method (e.g. sending
+  //  Midi data from Max/MSP using the standard Arduino USB connection, you
+  //  can set the baud rate to something more standard and use the regular
+  //  Max serial object)
+  midi.begin(0);
+}
+
+void loop()
+{
+  // Must be called every time through loop() IF dealing with incoming MIDI --
+  //  if you're just sending MIDI out, you don't need to use poll().
+  //
+  // Make sure other code doesn't take too long to process or serial data
+  //  can get backed up (and you can end up with obnoxious latency that ears
+  //  don't like).
+  //
+  // The poll function will cause the midi code to suck data from the serial
+  //  port and process it, and call any functions that are defined for handling
+  //  midi messages.
+  midi.poll();
+}
+
+
