@@ -51,7 +51,7 @@ class MyMidi : public Midi {
     void handlePitchChange(unsigned int pitch);
     void handleSongPosition(unsigned int position);
     void handleSongSelect(unsigned int song);
-    void handleRuneRequest(void);
+    void handleTuneRequest(void);
     void handleSync(void);
     void handleStart(void);
     void handleContinue(void);
