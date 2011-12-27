@@ -331,8 +331,8 @@ void Midi::sendAfterTouch(unsigned int channel, unsigned int velocity)
 void Midi::sendPitchChange(unsigned int pitch)
 {
     serial_.print(STATUS_PITCH_CHANGE, BYTE);
-    serial_.print(pitch & 0x7f);
-    serial_.print((pitch >> 7) & 0x7f);
+    serial_.print(pitch & 0x7f, BYTE);
+    serial_.print((pitch >> 7) & 0x7f, BYTE);
 }
 
 
@@ -340,8 +340,8 @@ void Midi::sendPitchChange(unsigned int pitch)
 void Midi::sendSongPosition(unsigned int position)
 {
     serial_.print(STATUS_SONG_POSITION, BYTE);
-    serial_.print(position & 0x7f);
-    serial_.print((position >> 7) & 0x7f);
+    serial_.print(position & 0x7f, BYTE);
+    serial_.print((position >> 7) & 0x7f, BYTE);
 }
 
 
