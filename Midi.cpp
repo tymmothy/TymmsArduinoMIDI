@@ -1,6 +1,6 @@
 /*  Midi.cpp: Code for MIDI processing library, Arduino version
  *
- *             (c) 2003-2008 Tymm Twillman <tymm@booyaka.com>
+ *             (c) 2003-2011 Tymm Twillman <tymmothy@gmail.com>
  *
  *  This file is part of Tymm's Arduino Midi Library.
  *
@@ -20,7 +20,6 @@
  */
  
 #include "HardwareSerial.h"
-#include "WConstants.h"
 #include "Midi.h"
 
 
@@ -51,13 +50,69 @@ static const int STATUS_RESET                 = 0xFF;
     
 
 
+/******************************************************************************
+ *
+ * These are the hardware interface bits.  To use with different kinds of
+ *  hardware, or for Arduino core changes, these should be the bits that
+ *  need to be tweaked.
+ *
+ *****************************************************************************/
+
+
+// Constructor -- set up defaults for variables, get ready for use (but don't
+//  take over serial port yet)
+Midi::Midi(HardwareSerial &serial) : serial_(serial)
+{
+    init();
+}
+
+
+// Open the serial port and begin processing.
+void Midi::begin(unsigned int channel, unsigned long baud)
+{
+  channelIn_ = channel;
+  serial_.begin(baud);
+}
+
+
+// Try to read data at serial port & pass anything read to processing function
+void Midi::poll(void)
+{
+    int c;
+
+
+    // Just keep sucking data from serial port until it runs out, processing
+    //  MIDI messages as we go
+    while((c = serial_.read()) != -1) {
+        recvByte(c);
+    }
+}
+
+
+// Function to actually send a byte of data over MIDI (separated out to
+//  make easy interfacing with different hardware easy)
+void Midi::sendByte(unsigned char value)
+{
+    serial_.write(value);
+}
+
+
+/******************************************************************************
+ *
+ * These are the general MIDI message handling functions; they handle
+ *  parsing and constructing MIDI messages.  You probably won't need to
+ *  make any changes to these.
+ *
+ *****************************************************************************/
+
+
 // Handle decoding incoming MIDI traffic a byte at a time -- remembers
 //  what it needs to from one call to the next.
 //
 //  This is a private function & not meant to be called from outside this class.
 //  It's used whenever data is available from the serial port.
 //
-void Midi::recvByte(int byte)
+void Midi::recvByte(int value)
 {
     int tmp;
     int channel;
@@ -65,7 +120,7 @@ void Midi::recvByte(int byte)
 
 
     if (recvMode_ & MODE_PROPRIETARY
-      && byte != STATUS_END_PROPRIETARY)
+      && value != STATUS_END_PROPRIETARY)
     {
         /* If proprietary handling compiled in, just pass all data received
          *  after a START_PROPRIETARY event to proprietary_decode
@@ -73,20 +128,20 @@ void Midi::recvByte(int byte)
          */
 
 #ifdef CONFIG_MIDI_PROPRIETARY
-        proprietaryDecode(byte);
+        proprietaryDecode(value);
 #endif
 
         return;
     }
 
-    if (byte & 0x80) {
+    if (value & 0x80) {
     
         /* All < 0xf0 events get at least 1 arg byte so
          *  it's ok to mask off the low 4 bits to figure
          *  out how to handle the event for < 0xf0 events.
          */
 
-        tmp = byte;
+        tmp = value;
 
         if (tmp < 0xf0)
             tmp &= 0xf0;
@@ -101,7 +156,7 @@ void Midi::recvByte(int byte)
             case STATUS_SONG_POSITION:
                 recvBytesNeeded_ = 2;
                 recvByteCount_ = 0;
-                recvEvent_ = byte;
+                recvEvent_ = value;
                 break;
 
             /* 1 byte arguments */
@@ -110,7 +165,7 @@ void Midi::recvByte(int byte)
             case STATUS_SONG_SELECT:
                 recvBytesNeeded_ = 1;
                 recvByteCount_ = 0;
-                recvEvent_ = byte;
+                recvEvent_ = value;
                 return;
 
             /* No arguments ( > 0xf0 events) */
@@ -179,36 +234,36 @@ void Midi::recvByte(int byte)
                     /* If velocity is 0, it's actually a note off & should fall thru
                      *  to the note off case
                      */
-                    if (byte) {
-                        handleNoteOn(channel, recvArg0_, byte);
+                    if (value) {
+                        handleNoteOn(channel, recvArg0_, value);
                         break;
                     }
 
                 case STATUS_EVENT_NOTE_OFF:
-                    handleNoteOff(channel, recvArg0_, byte);
+                    handleNoteOff(channel, recvArg0_, value);
                     break;
                 case STATUS_EVENT_VELOCITY_CHANGE:
-                    handleVelocityChange(channel, recvArg0_, byte);
+                    handleVelocityChange(channel, recvArg0_, value);
                     break;
                 case STATUS_EVENT_CONTROL_CHANGE:
-                    handleControlChange(channel, recvArg0_, byte);
+                    handleControlChange(channel, recvArg0_, value);
                     break;
                 case STATUS_EVENT_PROGRAM_CHANGE:
-                    handleProgramChange(channel, byte);
+                    handleProgramChange(channel, value);
                     break;
                 case STATUS_AFTER_TOUCH:
-                    handleAfterTouch(channel, byte);
+                    handleAfterTouch(channel, value);
                     break;
                 case STATUS_PITCH_CHANGE:
-                    bigval = (byte << 7) | recvArg0_;
+                    bigval = (value << 7) | recvArg0_;
                     handlePitchChange(bigval);
                     break;
                 case STATUS_SONG_POSITION:
-                    bigval = (byte << 7) | recvArg0_;
+                    bigval = (value << 7) | recvArg0_;
                     handleSongPosition(bigval);
                     break;
                 case STATUS_SONG_SELECT:
-                    handleSongSelect(byte);
+                    handleSongSelect(value);
                     break;
             }
         }
@@ -219,21 +274,7 @@ void Midi::recvByte(int byte)
         recvByteCount_ = 0;
     }
     
-    recvArg0_ = byte;
-}
-
-
-// Try to read data at serial port & pass anything read to processing function
-void Midi::poll(void)
-{
-    int c;
-    
-    
-    // Just keep sucking data from serial port until it runs out, processing
-    //  MIDI messages as we go
-    while((c = serial_.read()) != -1) {
-        recvByte(c);
-    }
+    recvArg0_ = value;
 }
 
 
@@ -244,11 +285,11 @@ void Midi::sendNoteOff(unsigned int channel, unsigned int note, unsigned int vel
     
     
     if (sendFullCommands_ || (lastStatusSent_ != status)) {
-        serial_.print(status, BYTE);
+        sendByte(status);
     }
     
-    serial_.print(note & 0x7f, BYTE);
-    serial_.print(velocity & 0x7f, BYTE);
+    sendByte(note & 0x7f);
+    sendByte(velocity & 0x7f);
 }
 
 
@@ -259,11 +300,11 @@ void Midi::sendNoteOn(unsigned int channel, unsigned int note, unsigned int velo
     
     
     if (sendFullCommands_ || (lastStatusSent_ != status)) {
-        serial_.print(status, BYTE);
+        sendByte(status);
     }
     
-    serial_.print(note & 0x7f, BYTE);
-    serial_.print(velocity & 0x7f, BYTE);
+    sendByte(note & 0x7f);
+    sendByte(velocity & 0x7f);
 }
 
 
@@ -275,11 +316,11 @@ void Midi::sendVelocityChange(unsigned int channel, unsigned int note, unsigned 
     
     
     if (sendFullCommands_ || (lastStatusSent_ != status)) {
-        serial_.print(status, BYTE);
+        sendByte(status);
     }
     
-    serial_.print(note & 0x7f, BYTE);
-    serial_.print(velocity & 0x7f, BYTE);
+    sendByte(note & 0x7f);
+    sendByte(velocity & 0x7f);
 }
 
 
@@ -291,11 +332,11 @@ void Midi::sendControlChange(unsigned int channel, unsigned int controller, unsi
     
     
     if (sendFullCommands_ || (lastStatusSent_ != status)) {
-        serial_.print(status, BYTE);
+        sendByte(status);
     }
     
-    serial_.print(controller & 0x7f, BYTE);
-    serial_.print(value & 0x7f, BYTE);
+    sendByte(controller & 0x7f);
+    sendByte(value & 0x7f);
 }
 
 
@@ -306,10 +347,10 @@ void Midi::sendProgramChange(unsigned int channel, unsigned int program)
     
     
     if (sendFullCommands_ || (lastStatusSent_ != status)) {
-        serial_.print(status, BYTE);
+        sendByte(status);
     }
 
-    serial_.print(program & 0x7f, BYTE);
+    sendByte(program & 0x7f);
 }
 
 
@@ -320,91 +361,89 @@ void Midi::sendAfterTouch(unsigned int channel, unsigned int velocity)
     
     
     if (sendFullCommands_ || (lastStatusSent_ != status)) {
-        serial_.print(status, BYTE);
+        sendByte(status);
     }
 
-    serial_.print(velocity & 0x7f, BYTE);
+    sendByte(velocity & 0x7f);
 }
 
 
 // Send a Midi PITCH CHANGE message, with a 14-bit pitch (always for all channels)
 void Midi::sendPitchChange(unsigned int pitch)
 {
-    serial_.print(STATUS_PITCH_CHANGE, BYTE);
-    serial_.print(pitch & 0x7f, BYTE);
-    serial_.print((pitch >> 7) & 0x7f, BYTE);
+    sendByte(STATUS_PITCH_CHANGE);
+    sendByte(pitch & 0x7f);
+    sendByte((pitch >> 7) & 0x7f);
 }
 
 
 // Send a Midi SONG POSITION message, with a 14-bit position (always for all channels)
 void Midi::sendSongPosition(unsigned int position)
 {
-    serial_.print(STATUS_SONG_POSITION, BYTE);
-    serial_.print(position & 0x7f, BYTE);
-    serial_.print((position >> 7) & 0x7f, BYTE);
+    sendByte(STATUS_SONG_POSITION);
+    sendByte(position & 0x7f);
+    sendByte((position >> 7) & 0x7f);
 }
 
 
 // Send a Midi SONG SELECT message, with a song ID of 0-127 (always for all channels)
 void Midi::sendSongSelect(unsigned int song)
 {
-    serial_.print(STATUS_SONG_SELECT, BYTE);
-    serial_.print(song & 0x7f, BYTE);
+    sendByte(STATUS_SONG_SELECT);
+    sendByte(song & 0x7f);
 }
 
 
 // Send a Midi TUNE REQUEST message (TUNE REQUEST is always for all channels)
 void Midi::sendTuneRequest(void)
 {
-    serial_.print(STATUS_TUNE_REQUEST, BYTE);
+    sendByte(STATUS_TUNE_REQUEST);
 }
 
 
 // Send a Midi SYNC message (SYNC is always for all channels)
 void Midi::sendSync(void)
 {
-    serial_.print(STATUS_SYNC, BYTE);
+    sendByte(STATUS_SYNC);
 }
 
 
 // Send a Midi START message (START is always for all channels)
 void Midi::sendStart(void)
 {
-    serial_.print(STATUS_START, BYTE);
+    sendByte(STATUS_START);
 }
 
 
 // Send a Midi CONTINUE message (CONTINUE is always for all channels)
 void Midi::sendContinue(void)
 {
-    serial_.print(STATUS_CONTINUE, BYTE);
+    sendByte(STATUS_CONTINUE);
 }
 
 
 // Send a Midi STOP message (STOP is always for all channels)
 void Midi::sendStop(void)
 {
-    serial_.print(STATUS_STOP, BYTE);
+    sendByte(STATUS_STOP);
 }
 
 
 // Send a Midi ACTIVE SENSE message (ACTIVE SENSE is always for all channels)
 void Midi::sendActiveSense(void)
 {
-    serial_.print(STATUS_ACTIVE_SENSE, BYTE);
+    sendByte(STATUS_ACTIVE_SENSE);
 }
 
 
 // Send a Midi RESET message (RESET is always for all channels)
 void Midi::sendReset(void)
 {
-    serial_.print(STATUS_RESET, BYTE);
+    sendByte(STATUS_RESET);
 }
 
 
-// Constructor -- set up defaults for variables, get ready for use (but don't
-//  take over serial port yet)
-Midi::Midi(HardwareSerial &serial) : serial_(serial)
+void Midi::init()
 {
     /* Not in proprietary stream */
     recvMode_ = 0;
@@ -423,14 +462,7 @@ Midi::Midi(HardwareSerial &serial) : serial_(serial)
 
     /* Listening to all channels */
     channelIn_ = 0;
-}
 
-
-// Open the serial port and begin processing.
-void Midi::begin(unsigned int channel, unsigned long baud)
-{
-  channelIn_ = channel; 
-  serial_.begin(baud);
 }
 
 
@@ -462,8 +494,17 @@ unsigned int Midi::getParam(unsigned int param)
 }
 
 
-// Placeholders.  You should subclass the Midi base class and define these to have your 
-//  version called.
+/******************************************************************************
+ *
+ * These are placeholder functions for the different possible MIDI event
+ *  handlers.
+ *
+ *  You should subclass the Midi base class and define these to have your
+ *  version called, for any events that you want to receive.
+ *
+ *****************************************************************************/
+
+
 void Midi::handleNoteOff(unsigned int channel, unsigned int note, unsigned int velocity) {}
 void Midi::handleNoteOn(unsigned int channel, unsigned int note, unsigned int velocity) {}
 void Midi::handleVelocityChange(unsigned int channel, unsigned int note, unsigned int velocity) {}

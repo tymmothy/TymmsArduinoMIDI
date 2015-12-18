@@ -85,7 +85,7 @@
  */
  
 class Midi {
-private:
+protected:
     // The serial port used by this Midi instance (it takes complete control over the port)
     HardwareSerial serial_;
     
@@ -112,11 +112,18 @@ private:
     /* Internal functions */
     
     // Called whenever data is read from the serial port
-    void recvByte(int byte);
+    virtual void recvByte(int value);
     
-    // This doesn't work -- by making it private, we ensure nobody ever calls it
+    // Called to send bytes to the serial port.  Moved out to separate function
+    //  to allow other hardware interfaces to be defined in subclasses.
+    virtual void sendByte(unsigned char b);
+
+    // This doesn't work -- by making it protected, we ensure nobody ever calls it
     Midi();
     
+    // Initialize (clear) internal state
+    void init();
+
 public:
     // Set this parameter to anything other than 0 to cause every MIDI update to
     //  include a copy of the current event (e.g. for every note off to include
